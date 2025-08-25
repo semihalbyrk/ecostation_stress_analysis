@@ -43,13 +43,9 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
             prepared_data = load_and_prepare_data(params)
             num_existing_stations = 12
 
-            # --- HATA DÜZELTMESİ BURADA ---
-            # Önce veriyi simülasyon için doğru sayıda istasyona göre dilimliyoruz.
-            current_station_data = prepared_data['ecostation_data'].head(num_existing_stations)
-            
-            # Ardından simülasyonu, beklenen doğru argümanlarla çağırıyoruz.
+            # Step 2: Run the simulation for the current state
             results = run_simulation(
-                station_data=current_station_data,
+                station_data=prepared_data['ecostation_data'].head(num_existing_stations),
                 trip_times=prepared_data['trip_times'],
                 params=params
             )
@@ -74,7 +70,7 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                 st.subheader("Verdict")
                 failure_rate = (results['service_failures'] / results['total_trips']) * 100 if results['total_trips'] > 0 else 0
                 
-                if failure_rate > 3.0 or results['service_failures'] > (num_existing_stations * 0.25): # Failure treshold adjusted
+                if failure_rate > 3.0 or results['service_failures'] > (num_existing_stations * 0.25):
                     st.error(f"""
                     **System Capacity Exceeded:** The simulation indicates that the current fleet of **{params['NUM_TRUCKS']} trucks is INSUFFICIENT** for the existing 12 ecostations under the 'direct shipment' model.
                     - **{results['service_failures']} overflow events** were recorded, meaning stations are frequently unserviced before they become overfilled.
@@ -95,7 +91,12 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                     st.markdown("**Locations of Ecostations and Garage**")
                     map_data = prepared_data['ecostation_data'].head(num_existing_stations)[['Latitude', 'Longitude']].copy()
                     garage_df = pd.DataFrame([{'Latitude': prepared_data['garage_location']['Latitude'], 'Longitude': prepared_data['garage_location']['Longitude']}])
-                    st.map(pd.concat([map_data, garage_df], ignore_index=True), zoom=10)
+                    final_map_df = pd.concat([map_data, garage_df], ignore_index=True)
+                    
+                    # **FIX**: Rename columns to the lowercase format required by st.map
+                    final_map_df.rename(columns={'Latitude': 'latitude', 'Longitude': 'longitude'}, inplace=True)
+                    
+                    st.map(final_map_df, zoom=10)
 
                 with col_chart:
                     st.markdown("**Trips per Ecostation**")
