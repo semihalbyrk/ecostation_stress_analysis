@@ -2,98 +2,127 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 
-# Diğer Python dosyalarımızdan gerekli fonksiyonları ve değişkenleri içe aktaralım
+# Import the functions and variables from our other project files
 from config import DEFAULT_PARAMS
 from data_loader import load_and_prepare_data
 from simulation import run_simulation
 
-st.set_page_config(layout="wide")
+# --- 1. PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Evraka | Operations Capacity Analysis",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("Ecostation Operasyonel Kapasite Analizi")
-st.write("Bu araç, mevcut filo ve operasyonel varsayımlar altında Ecostation ağının kapasitesini simüle eder.")
+# --- 2. SIDEBAR - CONFIGURABLE PARAMETERS ---
+st.sidebar.title("Simulation Parameters")
+st.sidebar.write("Adjust the parameters below to model different operational scenarios.")
 
-# --- SIDEBAR: Ayarlanabilir Parametreler ---
-st.sidebar.header("Simülasyon Ayarları")
 params = {}
-params['NUM_TRUCKS'] = st.sidebar.number_input("Araç Sayısı", min_value=1, max_value=10, value=DEFAULT_PARAMS['NUM_TRUCKS'])
-params['DAILY_WORK_HOURS'] = st.sidebar.slider("Günlük Mesai Süresi (saat)", 4.0, 12.0, DEFAULT_PARAMS['DAILY_WORK_HOURS'], 0.5)
-params['AVG_SPEED_KMH'] = st.sidebar.slider("Ortalama Araç Hızı (km/sa)", 20.0, 60.0, DEFAULT_PARAMS['AVG_SPEED_KMH'], 1.0)
-params['SERVICE_TIME_MIN'] = st.sidebar.slider("Ecostation Servis Süresi (dakika)", 10.0, 60.0, DEFAULT_PARAMS['SERVICE_TIME_MIN'], 5.0)
-params['UNLOADING_TIME_MIN'] = st.sidebar.slider("Depo Boşaltma Süresi (dakika)", 15.0, 90.0, DEFAULT_PARAMS['UNLOADING_TIME_MIN'], 5.0)
-params['ROAD_NETWORK_FACTOR'] = st.sidebar.slider("Yol Faktörü (1.0 = Kuş Uçuşu)", 1.0, 2.0, DEFAULT_PARAMS['ROAD_NETWORK_FACTOR'], 0.05)
-params['CAPACITY_TRIGGER_PERCENT'] = st.sidebar.slider("Toplama Tetikleme Yüzdesi (%)", 0.6, 1.0, DEFAULT_PARAMS['CAPACITY_TRIGGER_PERCENT'], 0.05)
-params['SIMULATION_DAYS'] = DEFAULT_PARAMS['SIMULATION_DAYS'] # Sabit
+params['NUM_TRUCKS'] = DEFAULT_PARAMS['NUM_TRUCKS'] # Kept fixed for this analysis phase
+params['DAILY_WORK_HOURS'] = st.sidebar.slider("Daily Work Hours per Truck", 4.0, 12.0, DEFAULT_PARAMS['DAILY_WORK_HOURS'], 0.5)
+params['ECOSTATION_WORK_HOURS'] = st.sidebar.slider("Ecostation Work Hours (for accumulation)", 4.0, 12.0, DEFAULT_PARAMS['ECOSTATION_WORK_HOURS'], 0.5)
+params['AVG_SPEED_KMH'] = st.sidebar.slider("Average Truck Speed (km/h)", 20.0, 60.0, DEFAULT_PARAMS['AVG_SPEED_KMH'], 1.0)
+params['SERVICE_TIME_MIN'] = st.sidebar.slider("Service Time per Ecostation (min)", 10.0, 60.0, DEFAULT_PARAMS['SERVICE_TIME_MIN'], 5.0)
+params['UNLOADING_TIME_MIN'] = st.sidebar.slider("Unloading Time at Garage (min)", 15.0, 90.0, DEFAULT_PARAMS['UNLOADING_TIME_MIN'], 5.0)
+params['ROAD_NETWORK_FACTOR'] = st.sidebar.slider("Road Network Factor (1.0 = Straight Line)", 1.0, 2.0, DEFAULT_PARAMS['ROAD_NETWORK_FACTOR'], 0.05)
+params['CAPACITY_TRIGGER_PERCENT'] = st.sidebar.slider("Collection Trigger at Capacity (%)", 0.60, 1.0, DEFAULT_PARAMS['CAPACITY_TRIGGER_PERCENT'], 0.05)
+params['SIMULATION_DAYS'] = DEFAULT_PARAMS['SIMULATION_DAYS']
 
-# --- Ana Analiz Butonu ---
-if st.sidebar.button("Analizi Çalıştır", type="primary"):
-    
-    with st.spinner("Veriler hazırlanıyor ve simülasyon çalıştırılıyor... Lütfen bekleyin."):
+# --- 3. MAIN APPLICATION ---
+st.title("Karaganda Ecostation Operations Analysis")
+st.markdown(f"A simulation of the current **{DEFAULT_PARAMS['NUM_TRUCKS']} truck fleet** over a **{params['SIMULATION_DAYS']}-day period** based on historical data.")
+
+if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=True):
+
+    with st.spinner("Preparing data and running simulation... Please wait."):
         try:
-            # 1. Verileri hazırla
-            ecostation_data, trip_times, garage_location = load_and_prepare_data(params)
-            num_existing_stations = 12 # Mevcut istasyon sayısı
+            # Step 1: Load and prepare all data based on sidebar parameters
+            prepared_data = load_and_prepare_data(params)
+            num_existing_stations = 12
 
-            # 2. Mevcut durum simülasyonunu çalıştır
-            analysis_12 = run_simulation(num_existing_stations, params['NUM_TRUCKS'], ecostation_data, trip_times, params)
+            # Step 2: Run the simulation for the current state
+            results = run_simulation(
+                num_stations_to_sim=num_existing_stations,
+                num_trucks=params['NUM_TRUCKS'],
+                station_data=prepared_data['ecostation_data'],
+                trip_data=prepared_data['trip_times'],
+                params=params
+            )
+            
+            # --- 4. DASHBOARD TABS (FRONTEND / BACKEND) ---
+            summary_tab, data_tab = st.tabs(["📊 Executive Summary", "🗂️ Detailed Data & Matrices"])
 
-            # --- SONUÇLARI GÖSTER ---
-            st.header("Mevcut Durum Analizi (12 Ecostation)")
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Filo Kullanım Oranı", f"{analysis_12['utilization_percent']:.2f}%")
-            col2.metric(f"Toplam Sefer ({params['SIMULATION_DAYS']} günde)", f"{analysis_12['total_trips']}")
-            col3.metric("Servis Aksama Sayısı", f"{analysis_12['service_failures']}", 
-                        help="Bir istasyon dolduktan sonraki 24 saat içinde toplanamama sayısı.")
+            with summary_tab:
+                st.header("Current State Analysis (12 Ecostations)")
 
-            # --- Yorum ve Değerlendirme ---
-            st.subheader("Değerlendirme")
-            if analysis_12['service_failures'] > (analysis_12['total_trips'] * 0.02): # Eğer aksama oranı %2'den fazlaysa
-                st.error(f"""
-                **SONUÇ: Mevcut filo yetersiz.**
-                - Simülasyon, mevcut operasyonel model ile **{params['NUM_TRUCKS']} aracın {num_existing_stations} istasyon için yetersiz kaldığını** gösteriyor.
-                - Toplam **{analysis_12['service_failures']} kez** toplama talebi zamanında karşılanamamıştır. Bu durum, operasyonel verimsizliklere ve potansiyel müşteri şikayetlerine yol açabilir.
-                - Filo kullanım oranı **%{analysis_12['utilization_percent']:.2f}** ile zaten çok yüksek. Bu, araçların esneklik payı olmadan sürekli çalıştığı anlamına gelir.
-                """)
-            else:
-                st.success(f"""
-                **SONUÇ: Mevcut filo yeterli.**
-                - Simülasyon, **{params['NUM_TRUCKS']} aracın {num_existing_stations} istasyonun talebini başarıyla karşılayabildiğini** gösteriyor.
-                - Toplamda sadece **{analysis_12['service_failures']}** servis aksaması yaşanmıştır, bu kabul edilebilir bir seviyedir.
-                - Filo kullanım oranı **%{analysis_12['utilization_percent']:.2f}**. Bu orana göre filoda yeni bir istasyon için kapasite olup olmadığı aşağıda incelenmiştir.
-                """)
+                # --- KPI Metrics ---
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Fleet Utilization", f"{results['utilization_percent']:.1f}%",
+                            help="The percentage of total available working hours that trucks spent actively on trips (driving, servicing, unloading).")
+                
+                failure_delta = f"{results['service_failures']} Overflows"
+                col2.metric("Service Failures (Overflows)", f"{results['service_failures']}",
+                            help="The number of times an ecostation's capacity exceeded 100% before a truck could arrive for collection.")
 
-            # --- Gelecek Potansiyeli Analizi ---
-            st.header("Gelecek Potansiyeli ve Büyüme Analizi")
-            
-            # 13. İstasyon Analizi
-            st.subheader("Soru: 1 Yeni Ecostation Eklersek Ne Olur?")
-            
-            # Hipotetik istasyon verilerini hazırla
-            hypothetical_station_data = ecostation_data.tail(len(ecostation_data) - num_existing_stations)
-            
-            analysis_13 = run_simulation(num_existing_stations + 1, params['NUM_TRUCKS'], ecostation_data, trip_times, params)
+                col3.metric(f"Total Trips ({params['SIMULATION_DAYS']} days)", f"{results['total_trips']}")
 
-            delta_failures = analysis_13['service_failures'] - analysis_12['service_failures']
-            
-            st.write(f"Sisteme ortalama özelliklerde yeni bir istasyon eklendiğinde, servis aksama sayısının **{analysis_12['service_failures']}**'dan **{analysis_13['service_failures']}**'e çıkacağı tahmin ediliyor (+{delta_failures} aksama).")
-            
-            if delta_failures > 10 or analysis_13['service_failures'] > (analysis_13['total_trips'] * 0.03):
-                 st.warning("**YORUM:** Mevcut filo ile yeni bir istasyon eklemek, operasyonel aksaklıkları ciddi şekilde artıracaktır. **Önerilmez.**")
-            else:
-                 st.info("**YORUM:** Mevcut filo, 1 yeni istasyonun getireceği ek yükü **tolere edebilir** görünüyor.")
+                # --- Main Verdict ---
+                st.subheader("Verdict")
+                failure_rate = (results['service_failures'] / results['total_trips']) * 100 if results['total_trips'] > 0 else 0
+                
+                if failure_rate > 3.0 or results['service_failures'] > 5:
+                    st.error(f"""
+                    **System Capacity Exceeded:** The simulation indicates that the current fleet of **{params['NUM_TRUCKS']} trucks is INSUFFICIENT** for the existing 12 ecostations under the 'direct shipment' model.
+                    - **{results['service_failures']} overflow events** were recorded, meaning stations are frequently unserviced before they become overfilled.
+                    - With a high utilization rate of **{results['utilization_percent']:.1f}%**, the fleet has no spare capacity to handle delays or additional workload.
+                    """)
+                else:
+                    st.success(f"""
+                    **System Capacity Sufficient:** The simulation indicates that the current fleet of **{params['NUM_TRUCKS']} trucks is SUFFICIENT** for the 12 ecostations.
+                    - Only **{results['service_failures']} overflow events** were recorded, which is within an acceptable operational tolerance.
+                    - The fleet utilization of **{results['utilization_percent']:.1f}%** suggests there is some remaining capacity in the system.
+                    """)
 
-            # 3. Araç Analizi
-            st.subheader(f"Soru: {num_existing_stations + 1} İstasyon İçin Kaç Araç Gerekir?")
-            analysis_13_with_more_trucks = run_simulation(num_existing_stations + 1, params['NUM_TRUCKS'] + 1, ecostation_data, trip_times, params)
-            st.write(f"Eğer {num_existing_stations + 1} istasyonlu operasyon **{params['NUM_TRUCKS'] + 1} araçla** yönetilirse:")
-            
-            col1_3, col2_3 = st.columns(2)
-            col1_3.metric(f"{params['NUM_TRUCKS'] + 1} Araç ile Kullanım Oranı", f"{analysis_13_with_more_trucks['utilization_percent']:.2f}%")
-            col2_3.metric(f"{params['NUM_TRUCKS'] + 1} Araç ile Servis Aksama Sayısı", f"{analysis_13_with_more_trucks['service_failures']}")
-            
-            st.success(f"**SONUÇ:** Filoya **1 araç daha eklemek**, {num_existing_stations + 1} istasyonlu bir ağdaki servis aksaklıklarını neredeyse tamamen ortadan kaldırarak operasyonel stabiliteyi sağlayacaktır.")
+                # --- Visualizations ---
+                st.subheader("Visual Analysis")
+                col_map, col_chart = st.columns(2)
+
+                with col_map:
+                    st.markdown("**Locations of Ecostations and Garage**")
+                    # Prepare location data for the map, adding colors
+                    map_data = prepared_data['ecostation_data'].head(num_existing_stations)[['Latitude', 'Longitude']].copy()
+                    garage_df = pd.DataFrame([{'Latitude': prepared_data['garage_location']['Latitude'], 'Longitude': prepared_data['garage_location']['Longitude']}])
+                    st.map(pd.concat([map_data, garage_df], ignore_index=True), zoom=10)
+
+                with col_chart:
+                    st.markdown("**Trips per Ecostation**")
+                    trips_by_station = prepared_data['ecostation_data'].head(num_existing_stations).copy()
+                    # Estimate trips based on accumulation and average collection size
+                    avg_collection_size = trips_by_station['Max Capacity (kg)'] * params['CAPACITY_TRIGGER_PERCENT']
+                    trips_by_station['Estimated Trips'] = (trips_by_station['Accumulation Rate (kg/day)'] * params['SIMULATION_DAYS']) / avg_collection_size
+                    st.bar_chart(trips_by_station.set_index('Service Point')['Estimated Trips'])
+
+
+            with data_tab:
+                st.header("Backend Data & Calculations")
+                st.write("This section shows the data calculated in the background, which feeds the simulation.")
+                
+                st.subheader("Calculated Ecostation Metrics")
+                st.dataframe(prepared_data['ecostation_data'].head(num_existing_stations).round(2))
+                
+                st.subheader("Direct Trip Durations (Hours)")
+                st.dataframe(pd.DataFrame.from_dict(prepared_data['trip_times'], orient='index', columns=['Total Trip Hours']).round(2))
+                
+                st.subheader("Distance Matrix (km)")
+                st.dataframe(prepared_data['distance_matrix_km'].iloc[:num_existing_stations+1, :num_existing_stations+1])
 
 
         except Exception as e:
-            st.error(f"Analiz sırasında bir hata oluştu: {e}")
+            st.error(f"An error occurred during analysis: {e}")
+            st.exception(e) # Provides a detailed traceback for debugging
+
+else:
+    st.info("Adjust the parameters in the sidebar and click 'Run Analysis' to start the simulation.")
