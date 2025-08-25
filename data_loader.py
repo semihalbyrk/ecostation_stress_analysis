@@ -6,7 +6,7 @@ import numpy as np
 
 def haversine(lat1, lon1, lat2, lon2):
     """Calculates the straight-line distance between two lat/lon points."""
-    R = 6371.0  # Radius of Earth in kilometers
+    R = 6371.0
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
     dlon = lon2 - lon1
     dlat = lat2 - lat1
@@ -108,8 +108,10 @@ def load_and_prepare_data(params):
         total_trip_hours = travel_time_to_and_from + (params['SERVICE_TIME_MIN'] / 60) + (params['UNLOADING_TIME_MIN'] / 60)
         trip_times[station_name] = total_trip_hours
         
+    # **FIX**: Added 'garage_location' to the returned dictionary
     return {
         "ecostation_data": ecostation_data,
+        "garage_location": garage_location,
         "trip_times": trip_times,
         "distance_matrix_km": distance_matrix.astype(float).round(2),
         "trip_duration_matrix_hours": trip_duration_matrix.astype(float).round(2)
