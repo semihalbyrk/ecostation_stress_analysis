@@ -39,9 +39,10 @@ def load_and_prepare_data(params):
 
     # 2. Outbound verisini yükle ve işle
     try:
-        outbound_df = pd.read_csv('data/f0386aadc6af4628b83914e8ec27d6c7.csv')
+        # HATA DÜZELTMESİ: Doğru dosya adı ve doğru ayraç (;) kullanıldı.
+        outbound_df = pd.read_csv('data/f0386aadc6af4628b83914e8ec27d6c7.csv', delimiter=';')
     except Exception as e:
-        raise FileNotFoundError(f"Outbound veri dosyası yüklenemedi: {e}")
+        raise FileNotFoundError(f"Outbound veri dosyası 'data/f0386aadc6af4628b83914e8ec27d6c7.csv' yüklenemedi: {e}")
 
     outbound_df['Ecostation'] = outbound_df['Department / Facility'].str.split(' > ').str[1].str.strip()
     outbound_df['Creation Time'] = pd.to_datetime(outbound_df['Creation Time'], format='%d.%m.%Y %H:%M:%S', errors='coerce')
