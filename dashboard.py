@@ -21,7 +21,7 @@ st.sidebar.title("Simulation Parameters")
 st.sidebar.write("Adjust the parameters below to model different operational scenarios.")
 
 params = {}
-params['NUM_TRUCKS'] = DEFAULT_PARAMS['NUM_TRUCKS'] # Kept fixed for this analysis phase
+params['NUM_TRUCKS'] = DEFAULT_PARAMS['NUM_TRUCKS']
 params['DAILY_WORK_HOURS'] = st.sidebar.slider("Daily Work Hours per Truck", 4.0, 12.0, DEFAULT_PARAMS['DAILY_WORK_HOURS'], 0.5)
 params['ECOSTATION_WORK_HOURS'] = st.sidebar.slider("Ecostation Work Hours (for accumulation)", 4.0, 12.0, DEFAULT_PARAMS['ECOSTATION_WORK_HOURS'], 0.5)
 params['AVG_SPEED_KMH'] = st.sidebar.slider("Average Truck Speed (km/h)", 20.0, 60.0, DEFAULT_PARAMS['AVG_SPEED_KMH'], 1.0)
@@ -33,7 +33,7 @@ params['SIMULATION_DAYS'] = DEFAULT_PARAMS['SIMULATION_DAYS']
 
 # --- 3. MAIN APPLICATION ---
 st.title("Karaganda Ecostation Operations Analysis")
-st.markdown(f"A simulation of the current **{DEFAULT_PARAMS['NUM_TRUCKS']} truck fleet** over a **{params['SIMULATION_DAYS']}-day period** based on historical data.")
+st.markdown(f"A simulation of the current **{params['NUM_TRUCKS']} truck fleet** over a **{params['SIMULATION_DAYS']}-day period** based on historical data.")
 
 if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=True):
 
@@ -43,12 +43,14 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
             prepared_data = load_and_prepare_data(params)
             num_existing_stations = 12
 
-            # Step 2: Run the simulation for the current state
+            # --- HATA DÜZELTMESİ BURADA ---
+            # Önce veriyi simülasyon için doğru sayıda istasyona göre dilimliyoruz.
+            current_station_data = prepared_data['ecostation_data'].head(num_existing_stations)
+            
+            # Ardından simülasyonu, beklenen doğru argümanlarla çağırıyoruz.
             results = run_simulation(
-                num_stations_to_sim=num_existing_stations,
-                num_trucks=params['NUM_TRUCKS'],
-                station_data=prepared_data['ecostation_data'],
-                trip_data=prepared_data['trip_times'],
+                station_data=current_station_data,
+                trip_times=prepared_data['trip_times'],
                 params=params
             )
             
@@ -63,7 +65,6 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                 col1.metric("Fleet Utilization", f"{results['utilization_percent']:.1f}%",
                             help="The percentage of total available working hours that trucks spent actively on trips (driving, servicing, unloading).")
                 
-                failure_delta = f"{results['service_failures']} Overflows"
                 col2.metric("Service Failures (Overflows)", f"{results['service_failures']}",
                             help="The number of times an ecostation's capacity exceeded 100% before a truck could arrive for collection.")
 
@@ -73,7 +74,7 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                 st.subheader("Verdict")
                 failure_rate = (results['service_failures'] / results['total_trips']) * 100 if results['total_trips'] > 0 else 0
                 
-                if failure_rate > 3.0 or results['service_failures'] > 5:
+                if failure_rate > 3.0 or results['service_failures'] > (num_existing_stations * 0.25): # Failure treshold adjusted
                     st.error(f"""
                     **System Capacity Exceeded:** The simulation indicates that the current fleet of **{params['NUM_TRUCKS']} trucks is INSUFFICIENT** for the existing 12 ecostations under the 'direct shipment' model.
                     - **{results['service_failures']} overflow events** were recorded, meaning stations are frequently unserviced before they become overfilled.
@@ -83,7 +84,7 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                     st.success(f"""
                     **System Capacity Sufficient:** The simulation indicates that the current fleet of **{params['NUM_TRUCKS']} trucks is SUFFICIENT** for the 12 ecostations.
                     - Only **{results['service_failures']} overflow events** were recorded, which is within an acceptable operational tolerance.
-                    - The fleet utilization of **{results['utilization_percent']:.1f}%** suggests there is some remaining capacity in the system.
+                    - The fleet utilization of **{results['utilization_percent']:.1f}%** suggests there is remaining capacity in the system.
                     """)
 
                 # --- Visualizations ---
@@ -92,7 +93,6 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
 
                 with col_map:
                     st.markdown("**Locations of Ecostations and Garage**")
-                    # Prepare location data for the map, adding colors
                     map_data = prepared_data['ecostation_data'].head(num_existing_stations)[['Latitude', 'Longitude']].copy()
                     garage_df = pd.DataFrame([{'Latitude': prepared_data['garage_location']['Latitude'], 'Longitude': prepared_data['garage_location']['Longitude']}])
                     st.map(pd.concat([map_data, garage_df], ignore_index=True), zoom=10)
@@ -100,7 +100,6 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
                 with col_chart:
                     st.markdown("**Trips per Ecostation**")
                     trips_by_station = prepared_data['ecostation_data'].head(num_existing_stations).copy()
-                    # Estimate trips based on accumulation and average collection size
                     avg_collection_size = trips_by_station['Max Capacity (kg)'] * params['CAPACITY_TRIGGER_PERCENT']
                     trips_by_station['Estimated Trips'] = (trips_by_station['Accumulation Rate (kg/day)'] * params['SIMULATION_DAYS']) / avg_collection_size
                     st.bar_chart(trips_by_station.set_index('Service Point')['Estimated Trips'])
@@ -122,7 +121,7 @@ if st.sidebar.button("▶️ Run Analysis", type="primary", use_container_width=
 
         except Exception as e:
             st.error(f"An error occurred during analysis: {e}")
-            st.exception(e) # Provides a detailed traceback for debugging
+            st.exception(e)
 
 else:
     st.info("Adjust the parameters in the sidebar and click 'Run Analysis' to start the simulation.")
